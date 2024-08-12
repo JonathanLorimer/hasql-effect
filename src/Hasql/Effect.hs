@@ -53,26 +53,27 @@ data ManipulationKind = Read | Write
 
 data SessionMode = Command | Transaction
 
-data H = HCon ManipulationKind SessionMode
+data HasqlGrade = HasqlGrade ManipulationKind SessionMode
 
 class HasConnections m where
   readConn :: m Pool
   writeConn :: m Pool
 
-newtype HasqlEff (k :: H) result = HasqlEff { getFree :: Free (Statement ()) result } 
+newtype HasqlEff (k :: HasqlGrade) result = HasqlEff { getFree :: Free (Statement ()) result } 
   deriving newtype (Functor, A.Applicative, M.Monad)
 
 instance EffA HasqlEff where
-  type Empty HasqlEff = 'HCon 'Read 'Command
+  type Empty HasqlEff = 'HasqlGrade 'Read 'Command
 
-  type Append HasqlEff ('HCon 'Read s) ('HCon 'Read s) = 'HCon 'Read s
-  type Append HasqlEff ('HCon 'Write s) ('HCon _ s) = 'HCon 'Write 'Transaction
-  type Append HasqlEff ('HCon _ s) ('HCon 'Write s) = 'HCon 'Write 'Transaction
+  -- TODO: Figure these semantics out lol
+  type Append HasqlEff ('HasqlGrade 'Read s)  ('HasqlGrade 'Read s)  = 'HasqlGrade 'Read s
+  type Append HasqlEff ('HasqlGrade 'Write s) ('HasqlGrade _ s)      = 'HasqlGrade 'Write 'Transaction
+  type Append HasqlEff ('HasqlGrade _ s)      ('HasqlGrade 'Write s) = 'HasqlGrade 'Write 'Transaction
 
-  pure :: a -> HasqlEff ('HCon 'Read 'Command) a
+  pure :: a -> HasqlEff ('HasqlGrade 'Read 'Command) a
   pure = HasqlEff . Pure
 
-  (<*>) :: HasqlEff (k :: H) (a -> b) -> HasqlEff (k' :: H) a -> HasqlEff (Append HasqlEff k k') b
+  (<*>) :: HasqlEff (k :: HasqlGrade) (a -> b) -> HasqlEff (k' :: HasqlGrade) a -> HasqlEff (Append HasqlEff k k') b
   HasqlEff f <*> HasqlEff a = HasqlEff $ f A.<*> a
 
 instance EffM HasqlEff where
@@ -85,36 +86,41 @@ instance EffM HasqlEff where
 read
   :: forall (a :: SessionMode) result.
      Statement () result
-  -> HasqlEff ('HCon 'Read a) result
+  -> HasqlEff ('HasqlGrade 'Read a) result
 read s = HasqlEff . Free $ Pure <$> s
 
 write
   :: forall (a :: SessionMode) result.
      Statement () result
-  -> HasqlEff ('HCon 'Write a) result
+  -> HasqlEff ('HasqlGrade 'Write a) result
 write s = HasqlEff . Free $ Pure <$> s
 
-class GetManipulationKind (k :: H) where
+class GetManipulationKind (k :: HasqlGrade) where
   manipulationKind :: Proxy k -> ManipulationKind
 
-class GetSessionMode (k :: H) where
+class GetSessionMode (k :: HasqlGrade) where
   sessionMode :: Proxy k -> SessionMode
 
-instance GetSessionMode ('HCon m 'Command) where
+instance GetSessionMode ('HasqlGrade m 'Command) where
   sessionMode _ = Command
 
-instance GetSessionMode ('HCon m 'Transaction) where
+instance GetSessionMode ('HasqlGrade m 'Transaction) where
   sessionMode _ = Transaction
 
-instance GetManipulationKind ('HCon 'Read s) where
+instance GetManipulationKind ('HasqlGrade 'Read s) where
   manipulationKind _ = Read
 
-instance GetManipulationKind ('HCon 'Write s) where
+instance GetManipulationKind ('HasqlGrade 'Write s) where
   manipulationKind _ = Write
 
 run
-  :: forall k m r. (HasConnections m, MonadIO m, GetManipulationKind k, GetSessionMode k)
-  => HasqlEff (k :: H) r
+  :: forall k m r. 
+    ( HasConnections m
+    , MonadIO m
+    , GetManipulationKind k
+    , GetSessionMode k
+    )
+  => HasqlEff (k :: HasqlGrade) r
   -> m (Either UsageError r)
 run (HasqlEff e) = do
   c <- case manipulationKind (Proxy @k) of

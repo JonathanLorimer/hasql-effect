@@ -38,25 +38,3 @@ library
       , hasql-pool
       , hasql-transaction
       , free
-
-test-suite hasql-effect-tests
-  import: common-opts
-  type: exitcode-stdio-1.0
-  hs-source-dirs: test
-
-  ghc-options:
-    -Wall -threaded -rtsopts -with-rtsopts=-N -fdefer-typed-holes -O0
-
-  main-is: Main.hs
-
-  -- cabal-fmt: expand test -Main
-  other-modules:
-
-  build-depends:
-    , hasql-effect
-    , hedgehog
-    , hspec
-    , hspec-core
-    , hspec-discover
-    , hspec-expectations
-    , hspec-hedgehog
